@@ -1,0 +1,386 @@
+---
+title: "Covid_Data_Analysis"
+output: pdf_document
+---
+
+### Introduction
+In this project I conduct a preliminary analysis of Covid-19 data for Confirmed 
+Cases and Deaths in the United States. I more specifically look at how the number
+of Deaths linearly depends on the number of confirmed cases and the date in the 
+state of Colorado.
+
+### Importing and Describing the Dataset
+
+The Covid-19 data set that I chose to use was sourced from Johns Hopkins, and the
+data itself was collected between the dates of 1/22/20 to 3/10/23. I chose to 
+specifically use the time series data sets for Confirmed Cases and Deaths in the
+United States. Using the US data sets as opposed to the global data sets allows
+me to conduct exploratory data analysis on fewer rows, and prototype some models
+before moving to the larger world wide data sets. It is noted on the Johns Hopkins
+Github website that for the time series data: 'All data is read in from the 
+daily case report'. So I expect the time series data sets to contain an aggregation
+of the daily report information.\
+
+I first load two libraries that allow for useful functions for data wrangling and
+manipulation of date and time fields.
+
+~~~{=comment}
+This is the comment format for the RMD document!
+For the next code chunk: message = FALSE keeps the output from loading the 
+libraries form being printed in the pdf documents.
+~~~
+
+\small
+```{r set_up, message = FALSE} 
+library( tidyverse ) 
+library( lubridate )
+```
+\normalsize
+
+In the following code I load two datasets: The US confirmed cases dataset and 
+the US deaths dataset. From looking at the first few rows of each, it appears 
+that each data point  is stored in a new column as opposed to a new row, so I
+use the **piviot_longer()** function to change the format of the data to have new
+observations in each row.
+
+\footnotesize
+```{r loading, message = FALSE}
+# Load data from the Johns Hopkins Github
+conf_us_url <- paste( "https://raw.githubusercontent.com/CSSEGISandData/",
+    "COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/",
+    "time_series_covid19_confirmed_US.csv", sep = "")
+raw_us_confirmed <- read_csv( conf_us_url )
+
+deat_us_url <- paste( "https://raw.githubusercontent.com/CSSEGISandData/",
+    "COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/",
+    "time_series_covid19_deaths_US.csv", sep = "")
+raw_us_deaths <- read_csv( deat_us_url )
+
+# First looks at row and column structure:
+head( raw_us_deaths, 2 ) 
+head( raw_us_confirmed, 2 ) 
+```
+
+```{r piviot_longer}
+# Using pivot_longer to change to one row per date as opposed to one column:
+raw_us_deaths <- pivot_longer(
+    data = raw_us_deaths,
+    cols = -c( "UID", "iso2", "iso3", "code3", "FIPS", "Admin2", "Province_State",
+        "Country_Region", "Lat", "Long_", "Combined_Key", "Population" ),
+    names_to = "Date",
+    values_to = "Deaths" )
+glimpse( raw_us_deaths ) # Verify that 'death' data is in row form ...
+
+# Using pivot_longer to change to one row per date as opposed to one column:
+raw_us_confirmed <- pivot_longer(
+    data = raw_us_confirmed,
+    cols = -c( "UID", "iso2", "iso3", "code3", "FIPS", "Admin2", "Province_State",
+        "Country_Region", "Lat", "Long_", "Combined_Key" ),
+    names_to = "Date",
+    values_to = "Confirmed" )
+glimpse( raw_us_confirmed ) # Verify that 'confirmed' data is in row form ...
+```
+\normalsize
+
+Looking at the data, now stored in a longer format as opposed to the wider format
+I first loaded, there are 3,819,906 rows or observations, and 14 and 13 columns for
+the deaths and confirmed data respectively. Many of the columns seem to be identical
+between the two datasets, so I expect to merge or join these two datasets after tidying
+each.
+
+### Tidying and Transforming the Dataset
+I tidied the data in the following steps. The R code and output
+for each of these steps can be seen just below.
+
+- After verifiing that the 'iso3' and 'iso2' columns duplicate the same information,
+i.e. that given one value you then know what the other must be, I removed the 'iso2'
+column from each dataset.
+
+- Because I chose to use the US only versions of the datasets, the 'Country_Region'
+value is "US" for all data. As that is not useful information for analysis, I 
+removed the 'Country_Region' columns for both datasets.
+
+- The 'code3' column also duplicates the 'iso3' information, similar to how 'iso3'
+and 'iso2' behaved. After verifying that there is a one-to-one correspondence between
+'iso3' and 'code3' I chose to remove the 'code3' column from each dataset.
+
+- The 'UID' columns were removed from both datasets as this information is duplicated
+in the 'FIPS' columns.
+
+- The 'Lat' and 'Long' columns were removed because I don't intend to do and location
+or GIS analysis in this report.
+
+\footnotesize
+```{r iso_culling, results = "hold"}
+# Unique values of the 'iso2' and 'iso3' columns:
+unique( raw_us_confirmed$iso2 )
+unique( raw_us_confirmed$iso3 )
+
+# Unique values of the 'iso2' and 'iso3' columns:
+unique( raw_us_deaths$iso2 )
+unique( raw_us_deaths$iso3 )
+
+# Do all of the entries in ISO2 and ISO3 align?
+c( 
+    all( which(raw_us_confirmed$iso2 == "AS") ==
+        which(raw_us_confirmed$iso3 == "ASM") ),
+    all( which(raw_us_confirmed$iso2 == "GU") ==
+        which(raw_us_confirmed$iso3 == "GUM") ),
+    all( which(raw_us_confirmed$iso2 == "MP") ==
+        which(raw_us_confirmed$iso3 == "MNP") ),
+    all( which(raw_us_confirmed$iso2 == "VI") ==
+        which(raw_us_confirmed$iso3 == "VIM") ) 
+)
+
+# Duplicate the align check for 'deaths' data:
+c(
+    all( which(raw_us_deaths$iso2 == "AS") ==
+        which(raw_us_deaths$iso3 == "ASM") ),
+    all( which(raw_us_deaths$iso2 == "GU") ==
+        which(raw_us_deaths$iso3 == "GUM") ),
+    all( which(raw_us_deaths$iso2 == "MP") ==
+        which(raw_us_deaths$iso3 == "MNP") ),
+    all( which(raw_us_deaths$iso2 == "VI") ==
+        which(raw_us_deaths$iso3 == "VIM") )
+)
+```
+
+```{r iso_culling2}
+# Remove ISO2 as it duplicates ISO3 column for confirmed data:
+raw_us_confirmed <- select( .data = raw_us_confirmed, -iso2 )
+
+# Remove ISO2 as it duplicates ISO3 column for 'deaths' data:
+raw_us_deaths <- select( .data = raw_us_deaths, -iso2 )
+```
+
+```{r de-duplicate, results = "hold"}
+# Verify that 'Country_Region' contains only "US" for both data sets. 
+unique( raw_us_confirmed$Country_Region )
+unique( raw_us_deaths$Country_Region )
+
+# Drop the 'Country_Region' column from both data sets as it contains no 
+# useful information for this analysis:
+raw_us_confirmed <- select( .data = raw_us_confirmed, -Country_Region )
+raw_us_deaths <- select( .data = raw_us_deaths, -Country_Region )
+```
+
+```{r de-duplicate2}
+# The code3 column seems to duplicate the iso3 information. Checking:
+unique( raw_us_confirmed$code3 )
+unique( raw_us_confirmed$iso3 )
+
+# Indices where each 'code3' value exists:
+idx_16 <- which( raw_us_confirmed$code3 == 16)
+idx_316 <- which( raw_us_confirmed$code3 == 316)
+idx_580 <- which( raw_us_confirmed$code3 == 580)
+idx_630 <- which( raw_us_confirmed$code3 == 630)
+idx_850 <- which( raw_us_confirmed$code3 == 850)
+
+# Finding 'iso3' values, and checking that entries all have the same value:
+head( raw_us_confirmed$iso3[idx_16] )
+all( raw_us_confirmed$iso3[idx_16] == "ASM" )
+
+head( raw_us_confirmed$iso3[idx_316] )
+all( raw_us_confirmed$iso3[idx_316] == "GUM" )
+
+head( raw_us_confirmed$iso3[idx_580] )
+all( raw_us_confirmed$iso3[idx_580] == "MNP" )
+
+head( raw_us_confirmed$iso3[idx_630] )
+all( raw_us_confirmed$iso3[idx_630] == "PRI" )
+
+head( raw_us_confirmed$iso3[idx_850] )
+all( raw_us_confirmed$iso3[idx_850] == "VIR" )
+
+# Duplicate this analysis for the 'deaths' data:
+unique( raw_us_deaths$code3 ) 
+all( raw_us_confirmed$iso3[ which( raw_us_deaths$code3 == 16 ) ] == "ASM" )
+all( raw_us_confirmed$iso3[ which( raw_us_deaths$code3 == 316 ) ] == "GUM" )
+all( raw_us_confirmed$iso3[ which( raw_us_deaths$code3 == 580 ) ] == "MNP" )
+all( raw_us_confirmed$iso3[ which( raw_us_deaths$code3 == 630 ) ] == "PRI" )
+all( raw_us_confirmed$iso3[ which( raw_us_deaths$code3 == 850 ) ] == "VIR" )
+
+# Remove all of the index vectors created: cleaning work space.
+rm( idx_16, idx_316, idx_580, idx_630, idx_850  )
+```
+
+```{r de-duplicate3}
+# Remove the 'code3' columns as they duplicate the 'iso3' columns:
+raw_us_confirmed <- select( .data = raw_us_confirmed, -code3 )
+raw_us_deaths <- select( .data = raw_us_deaths, -code3 )
+
+# Removing UID columns as they are duplicated in the 'FIPS' information:
+raw_us_confirmed <- select( .data = raw_us_confirmed, -UID )
+raw_us_deaths <- select( .data = raw_us_deaths, -UID )
+
+# Removing the 'Lat' and 'Long_' columns as I will not be doing any GIS analysis
+# for this particular project:
+raw_us_confirmed <- select( .data = raw_us_confirmed, -Lat )
+raw_us_deaths <- select( .data = raw_us_deaths, -Lat )
+raw_us_confirmed <- select( .data = raw_us_confirmed, -Long_ )
+raw_us_deaths <- select( .data = raw_us_deaths, -Long_ )
+```
+\normalsize
+
+After removing the duplicate data, I transformed the data to make analysis easier
+in the following steps:
+
+- I first join the two data sets, effectively adding the 'Population' and 
+'Deaths' columns to the Confirmed data set.
+
+- I transform date column using the lubridate library.
+
+- I remove any rows/observations that have zero confirmed cases. This removes 
+approximately 345,000 observations.
+
+After these operations, I believe that the dataset is ready for analysis:
+
+\footnotesize
+```{r, clean_and_transform}
+# Create clean data that combines both confirmed cases and deaths information:
+clean_data <- left_join( raw_us_confirmed, raw_us_deaths,
+    by = c("iso3", "FIPS", "Admin2", "Province_State","Combined_Key", "Date") )
+
+# Transform 'Date' using lubridate
+clean_data <- mutate( .data = clean_data, Date_Lub = mdy(Date),
+    .keep = "unused" )
+
+# Filter data to remove any rows when there are zero confirmed cases:
+clean_data <- filter( .data = clean_data, Confirmed > 0 )
+
+# Remove the raw datasets, freeing up memory:
+rm( raw_us_confirmed, raw_us_deaths )
+```
+\normalsize
+
+### Analysis and Visualization of Data:
+The question that I am initially interested in is if there is a linear relationship
+between the number of confirmed cases and deaths, i.e. if Covid has some relatively
+fixed amount of deaths for each 100 cases of Covid. I am also curious if the number
+of deaths depended on other variables: population, time, location, etc. To study
+these questions I started with a single location (FIPS = 1001, which corresponds
+to Autauga county Alabama) and plotted both Confirmed cases and Deaths vs. Date.
+The y axis is formatted in a log10 scale so that details can be seen on both lines
+but the data itself is not log transformed.
+
+\footnotesize
+```{r analysis1, message = FALSE}
+# Plotting Confirmed and Deaths vs. Date
+data_subset <- filter( .data = clean_data, FIPS == 1001, Deaths > 0)
+# dev.new() # Useful for plotting outside of the .rmd
+ggplot( data = data_subset) +
+    geom_line( mapping = aes(x = Date_Lub, y = Confirmed, color = "Confirmed") ) +
+    geom_line( mapping = aes(x = Date_Lub, y = Deaths, color = "Deaths"),
+        linetype = "dashed" ) +
+    scale_y_log10() +
+    labs( x = "Date", y = "Confirmed Cases and Deaths - Log10" )
+```
+\normalsize
+
+From this plot, it looks like for this location there is a relationship between 
+confirmed cases and deaths. To expand this idea to a larger piece of the data, 
+we create a simple linear model where we aggregate all of the confirmed cases and
+deaths for each date, ignoring location, and fitting a linear model. I also plot
+the aggregated confirmed cases and deaths before showing the model output.
+This model's summary and diagnostic plots are shown just below. From
+the summary, the number of confirmed cases is very significant, with a p-value of
+less than 2e-16. The R squared value is surprisingly large as well at 0.95, this 
+indicates an almost perfect linear relationship between confirmed cases and deaths.
+The diagnostic plots however show the model does not fit the basic assumption of
+a linear model well at all. We would expect the residuals to lack a 
+structure/pattern and the QQ plot to 
+show normal data for typical assumptions of the linear model. Our data does not 
+display those trends; so this simple model needs modification.\
+
+\footnotesize
+```{r random_coding}
+# All data aggregated
+test_data <- clean_data %>%
+    group_by( Date_Lub ) %>%
+    summarize( Sum_Conf = sum( Confirmed ), Sum_Deaths = sum( Deaths ) ) 
+
+ggplot( data = test_data ) +
+    geom_line( mapping = aes(x = Date_Lub, y = Sum_Conf, color = "Confirmed") ) +
+    geom_line( mapping = aes(x = Date_Lub, y = Sum_Deaths, color = "Deaths"),
+        linetype = "dashed" ) +
+    scale_y_log10() +
+    labs( x = "Date", y = "Confirmed Cases and Deaths - Log10",
+        title = "Confirmed Cases and Deaths for all US Data" )
+```
+
+```{r simple_model, fig.show="hold", out.width="50%"}
+test_model <- lm( data = test_data, Sum_Deaths ~ Sum_Conf )
+summary( test_model )
+
+plot(test_model)
+```
+\normalsize
+
+I form a second model by restricting the data to a single state (Colorado), and
+allowing date to be a predictor variable. I also include the interaction term of
+date and confirmed as a predictor variable because it would make sense that the
+number of confirmed cases depends on the date as well. The diagnostic plots from
+this second linear model show that this model is better, with respect to the QQ 
+plot showing more normality than the the first linear model did. However, there
+still structure left in the residuals, so there are some underlying trends that
+I am not accounting for. 
+Nonetheless, with an R squared value 0.99, the chosen predictor variables
+have accounted for the vast majority of randomness in the data. I think this 
+second simple model answers my curiosity of how confirmed cases and deaths are
+linearly related. From the coefficients of the model, In the state of Colorado,
+we expect 8.854 deaths for each additional 100 confirmed cases, if the date was
+held constant. 
+
+\footnotesize
+```{r simple_model2, , fig.show="hold", out.width="50%"}
+# All data aggregated
+test_data <- clean_data %>%
+    filter( Province_State == "Colorado" ) %>%
+    group_by( Date_Lub ) %>%
+    summarize( Sum_Conf = sum( Confirmed ), Sum_Deaths = sum( Deaths ) ) 
+
+test_model <- lm( data = test_data, Sum_Deaths ~ Sum_Conf + Date_Lub +
+        Sum_Conf * Date_Lub )
+summary( test_model )
+
+plot(test_model) # Diagnostic plots for linear model
+```
+\normalsize
+
+Further modifications and expansions of this model are certainly possible. One 
+expansion that seem interesting is to fit a similar linear model for each state
+and compare the coefficients for each model. I would also be curious to do similar
+models for each country, using the world wide data sets, and compare the resulting 
+coefficients. In the interest of a shorter and more readable presentation, I will
+hold off on those expansion for a later project.
+
+### Consideration of Bias:
+
+There are quite a few possible sources of Bias in the collection of confirmed cases
+of Covid as well as deaths from this disease. During the pandemic, the Covid 
+vaccination became politically charged, and I suspect the political discord lead to 
+some people not engaging in Covid testing or treatment. Regardless of political 
+leanings, there were certainly some un-reported cases of Covid, but perhaps more
+un-reported cases amongst different groups of people.\
+
+For deaths related to Covid, there are more variables that could lead to bias in 
+that data. Different cites/states/counties could code deaths differently, i.e. one
+city may code a death as heart attack, while a second may code it a Covid if the
+patient had Covid and a heart attack too. Having multiple medical conditions
+makes coding a death as Covid related or not complicated. Thus there may be 
+some locations reporting quite different amounts of Covid deaths even if the 
+situations in both locations are similar.\
+
+Lastly, my analysis has my own bias. My last linear model focused on Covid deaths
+in Colorado. I certainly chose to look locally for answers before looking more
+globally. I am unfamiliar with many global locations, and any analysis I conducted
+on data from those locations may be flawed do to my unfamiliarity.
+
+### Appendix -  Session Information
+To wrap up this document, I include session info for the R code, i.e. calling out
+the current versions of packages for reproducibility.
+\footnotesize
+```{r ending}
+sessionInfo()
+```
+\normalsize
