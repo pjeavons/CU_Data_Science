@@ -1,0 +1,349 @@
+---
+title: "NYPD Shooting Incident Data - Data Science Project"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+### Instructions for the NYPD Shooting Incidents Project:
+
+The instructions for this data project, as posted in Coursera were as follows.
+The sections of this document follow this order and topic for simplicity.
+
+1. Step 1 - Start an Rmd Document: \
+Start an Rmd document that describes and imports the shooting project dataset
+in a reproducible manner.
+
+2. Project Step 2 - Tidy and Transform Your Data: \
+Add to your Rmd document a summary of the data and clean up your dataset by
+changing appropriate variables to factor and date types and getting rid of 
+any columns not needed.  Show the summary of your data to be sure there is 
+no missing data. If there is missing data, describe how you plan to handle 
+it. 
+
+3. Project Step 3 - Add Visualizations and Analysis: \
+Add at least two different visualizations & some analysis to your Rmd. Does 
+this raise additional questions that you should investigate? 
+
+4. Project Step 4 - Add Bias Identification: \
+Write the conclusion to your project report and include any possible sources
+of bias. Be sure to identify what your personal bias might be and how you 
+have mitigated that.
+
+### Step 1 - Importing and Describing Data Set:
+
+To begin this project, I first loaded the tidyverse and lubridate packages. 
+These packages include functions for data wrangling and simplified data/time 
+coding respectively.
+\small
+```{r set_up, message = FALSE} 
+library( tidyverse ) 
+library( lubridate )
+```
+\normalsize
+
+I next loaded the data from the csv file, which I download from 'data.gov' in 
+the code below.
+I then used the **glimpse()** and **summary()** functions to get a first look at
+the structure of this data and brief characteristics of each column.
+\small
+```{r loading, message = FALSE}
+# Read the NYPD csv file from data.gov:
+data_url <- paste( "https://data.cityofnewyork.us/api/views/833y-fsy8/",
+"rows.csv?accessType=DOWNLOAD", sep = "" )
+raw_data <- read_csv( data_url )
+
+glimpse(raw_data) # See the columns (and types) of the data.
+summary(raw_data) # Characteristics of the columns
+```
+\normalsize
+
+### Step 2 - Tidying and Transforming Data:
+I tidied and transformed the data in the following steps:
+
+- Consolidation the date and time information from two columns into a single
+column that was formatted using the *lubridate* coding.
+
+- Removing the 'Log_Lat' Column which contains information that is duplicated in
+in the 'Longitude' and 'Latitude' columns.
+
+- Casting the 'PERP_SEX' and 'VIC_SEX' columns as factors after recoding "(null)"
+entries as NA.
+
+- Casting the 'PERP_RACE' and 'VIC_RACE' columns as factors after again recoding
+"(null)" entries as NA.
+
+- Casting the 'PERP_AGE_GROUP' and 'VIC_AGE_GROUP' columns as factors after 
+recoding a variety of anomalous entries as NA.
+
+- Casting the 'BORO' and 'JURISDICTION_CODE' columns as factors. 
+
+- The character columns of 'LOC_OF_OCCUR_DESC', 'LOC_CLASSFCTN_DESC', and 
+'LOCATION_DESC' were left in their original forms. While not used in analysis in
+this document, this could be useful for later analysis. These columns have many missing
+values or NA entries. Due to incompleteness of these fields, I plan to use the
+information as an extension of another analysis as opposed to trying to plot
+or group_by/summarize any of these columns.
+
+- The 'X_COORD_CD' and 'Y_COORD_CD' columns were deleted, as I can already use the 
+latitude and longitude information for plotting.
+
+\small
+```{r tidying}
+#~~~# Create a copy of raw_data to start tidying/transforming:
+clean_data <- raw_data
+
+#~~~# Code the date and time in the same column using mutate and the lubridate
+#date/time coding.
+clean_data <- mutate( .data = raw_data,
+    occour_date_time = mdy_hms( paste(OCCUR_DATE, OCCUR_TIME) ) )
+
+# Remove original date and time columns from the clean data.
+clean_data <- select( .data = clean_data, c(-OCCUR_DATE, -OCCUR_TIME) )
+```
+
+```{r tidying2, results = "hold"}
+#~~~# Lon_lat looks like it contains the same info as Latitude and Longitude columns,
+# so there is duplicate information here that can be removed. Determining if there
+# are the same NAs in both the individual and combined columns.
+sum( is.na(clean_data$Latitude) )
+sum( is.na(clean_data$Longitude) )
+sum( is.na(clean_data$Lon_Lat) )
+all( which( is.na(clean_data$Latitude) ) == which( is.na(clean_data$Longitude) ) )
+na_indices <- which( is.na(clean_data$Longitude) )
+clean_data$Lon_Lat[na_indices]
+all( is.na(clean_data$Lon_Lat[na_indices]) )
+```
+
+```{r tidying3}
+# The NAs are identical between the three columns; no info lost by removing the 
+# duplicate column.
+clean_data <- select( .data = clean_data, -Lon_Lat )
+
+#~~~# Transforming the 'SEX' Columns
+unique( clean_data$PERP_SEX ) # Note the "(null)" entries
+# Reassign the "(null)" entries as NA
+null_idxs <- which( clean_data$PERP_SEX == "(null)" )
+clean_data$PERP_SEX[null_idxs] <- NA
+rm( null_idxs ) # Removing indices that are no longer needed
+
+unique( clean_data$VIC_SEX ) # No obvious needs for reassignment.
+
+# Checking that cleanup was successful
+unique( clean_data$PERP_SEX )
+
+# Casting the sex data as factors:
+clean_data <- mutate( .data = clean_data,
+    Perp_Sex = as.factor( PERP_SEX ) )
+clean_data <- mutate( .data = clean_data,
+    Vic_Sex = as.factor( VIC_SEX ) )
+
+# Removing the original 'SEX' columns:
+clean_data <- select( .data = clean_data, c(-PERP_SEX, -VIC_SEX) )
+
+#~~~# Transforming the 'RACE' Columns
+unique( clean_data$PERP_RACE ) # Note the NA and "(null)" entries.
+unique( clean_data$VIC_RACE ) # No obvious needs for recoding.
+
+# Reassigning "(null)" entries as NA
+null_idxs <- which( clean_data$PERP_RACE == "(null)" )
+clean_data$PERP_RACE[null_idxs] <- NA
+rm( null_idxs ) # Removing indices that are no longer needed
+
+# Checking that reassignment was successful:
+unique( clean_data$PERP_RACE )
+
+# Casting the 'RACE' columns as factors:
+clean_data <- mutate( .data = clean_data, Perp_Race = as.factor( PERP_RACE ) )
+clean_data <- mutate( .data = clean_data, Vic_Race = as.factor( VIC_RACE ) )
+
+# Removing the original 'RACE' columns:
+clean_data <- select( .data = clean_data, c(-PERP_RACE, -VIC_RACE) )
+
+#~~~# Transforming the 'AGE' columns:
+unique(clean_data$PERP_AGE_GROUP) # Note the: (null), 1020, 940, 224, 1028
+unique(clean_data$VIC_AGE_GROUP) # Note the: 1022
+
+# Reassigning anomalous entries in PERP_AGE 
+anom_idxs = which( clean_data$PERP_AGE_GROUP %in% c("(null)", "1020", "940",
+        "224", "1028") )
+clean_data$PERP_AGE_GROUP[anom_idxs] <- NA
+rm( anom_idxs ) # Removing indices that are longer needed.
+
+# Reassigning anomalous entries in VIC_AGE 
+anom_idxs = which( clean_data$VIC_AGE_GROUP == "1022" )
+clean_data$VIC_AGE_GROUP[anom_idxs] <- NA
+rm( anom_idxs ) # Removing indices that are longer needed
+
+# Checking for success in reassignment:
+unique(clean_data$PERP_AGE_GROUP)
+unique(clean_data$VIC_AGE_GROUP) 
+
+# Casting the 'AGE' data as factors:
+clean_data <- mutate( .data = clean_data, Perp_Age = as.factor( PERP_AGE_GROUP ) )
+clean_data <- mutate( .data = clean_data, Vic_Age = as.factor( VIC_AGE_GROUP ) )
+
+# Removing the original 'AGE' columns:
+clean_data <- select( .data = clean_data, c(-PERP_AGE_GROUP, -VIC_AGE_GROUP) )
+
+#~~~# Casting 'BORO' and 'JURISDICTION_CODE' as factors:
+clean_data <- mutate( .data = clean_data, Boro = as.factor( BORO ) )
+clean_data <- mutate( .data = clean_data, 
+    Jurisdiction_Code = as.factor( JURISDICTION_CODE ) )
+
+# Removing original 'BORO' and 'JURISDICTION_CODE' columns:
+clean_data <- select( .data = clean_data, c(-BORO, -JURISDICTION_CODE) )
+
+#~~~# Removing original 'X_COORD_CD' and 'Y_COORD_CD' columns:
+clean_data <- select( .data = clean_data, c(-X_COORD_CD, -Y_COORD_CD) )
+```
+\normalsize
+
+### Step 3 - Analysis and Visualization of Data:
+With the data set tidied and transformed, I was curious if there were any 
+obvious patterns over time in the shooting data. This is initially as exploratory
+data analysis, as opposed to directly trying to answer a question. The first plot I 
+made was to plot shooting incidents per month versus time. The number of 
+incidents per month was found using the **group_by()** and **summarize()** 
+functions from the tidyverse package. This plot is just below. We can see in the
+plot that there appears to be a seasonal pattern in the shooting data with
+yearly low values in the winter; but this will be clarified in a later plot too.
+
+\small
+```{r analysis}
+ana_data <- mutate( .data = clean_data, 
+    Month = floor_date(occour_date_time, "month") )
+
+# dev.new() # Pop out a new figure window
+ana_data %>% 
+    group_by( Month ) %>%
+    summarize( Count = n() ) %>%
+    ggplot( aes( x = Month, y = Count) ) + geom_line() + geom_point() +
+    labs( title = "Shooting Incidents per Month")
+```
+\normalsize
+
+The second plot I made, was to see if there is a difference in number shooting 
+victims with respect to race. Below I have used box plots for each victim race 
+category, with shooting incidents per month on the y-axis. This is the exact same
+data (shooting incidents per month) as the first plot above, but split into bins
+for each victim race. For readers not familiar with boxplots; the center line 
+inside the box represents the median number, and the top and bottom of the box 
+representing the 25th and 75th percentiles. Further whiskers and dots represent 
+values of 1.5 times the inter-quartile-range and outliers in the data respectively.
+This plot shows there is a large difference in both the median numbers of shootings
+per month with respect to race, and a large amount of variance in numbers of 
+shootings per month too.
+
+\small
+```{r analysis2, fig.height = 6}
+#dev.new() # Pop out a new figure window
+ana_data %>%
+    group_by( Vic_Race, Month ) %>%
+    summarize( Count = n() ) %>%
+    ggplot() + geom_boxplot( aes(x = Vic_Race, y = Count) ) +
+        theme( text = element_text(size = 10), 
+            plot.title = element_text(size=14),
+            axis.text.x = element_text(angle = 70, vjust = 0.95, hjust=1),
+            axis.title.x=element_blank() ) +
+    labs( title = "Shooting Incidents per Month, Separated by Victim Race - Boxplots")
+```
+\normalsize
+
+The third plot I was interested in making was how shooting incidents varied over
+the boroughs of the city. I added trend lines to these plots to indicate if 
+shooting incidents were largely increasing or decreasing with respect to time for
+each borough.
+
+\small
+```{r last-plot, fig.height = 5}
+#dev.new() # Pop out a new figure window
+ana_data %>% 
+    group_by( Month, Boro ) %>%
+    summarize( Count = n() ) %>%
+    ggplot( aes( x = Month, y = Count) ) + geom_smooth( method = "lm" ) +
+    geom_point() + facet_wrap( ~ Boro ) +
+    labs( title = "Shooting Incidents per Month - Separated by Borough")
+```
+\normalsize
+
+### Step 3.5 - Reanalysis of Shooting Dependence on Month and Modeling
+This section does not neatly fit into the steps as laid out in the week 3 
+assignment. I wanted to more clearly plot the dependence of shooting incidence 
+on the month, as well as try to fit a more defined linear model of the number 
+of shooting incidents as a function of the month and borough in the city.\\
+
+A plot to more clearly show the dependence of month on the number of shooting
+incidents is shown below:
+
+\small
+```{r, month_vs_incidents}
+ana_data %>% 
+    mutate( Month_number = as.factor( month(Month) ) ) %>%
+    group_by( Boro, Month_number ) %>%
+    summarize( Count = n() ) %>%
+    ggplot( aes( x = Month_number, y = Count, color = Boro) ) +
+    geom_point() + labs( title = "Shooting Incidents per Month")
+```
+\normalsize
+
+Given that the exploratory data analysis has shown strong relationships between
+victim race, borough, and month on the number of shooting incidents, I next fit
+a linear model to the data. This linear model uses these three variables as 
+predictors, as well as using the year to allow for shooting incidents trending 
+in time and using number of shooting incidents per month as the response variable.
+Please see the code and output below:
+
+\small
+```{r modeling}
+ana_data2 <- ana_data %>%
+    mutate( Month_Number = as.factor( month(Month) ) ) %>%
+    group_by( Month_Number, Vic_Race, Boro ) %>%
+    summarize( Count = n() )
+    
+shooting_incidents_model <- lm( data = ana_data2,
+    Count ~ Month_Number + Vic_Race + Boro )
+summary( shooting_incidents_model )
+```
+\normalsize
+
+The summary of this model shows that they are significant values 
+(Months/Races/Boroughs) in each predictor with respect to the number of shootings
+per month. But I also believe that further modifications would be needed 
+(e.g. using a glm, or an ordinal model, etc.) to refine this model for better 
+predictions. To keep this presentation shorter, I will same model refinement for
+another project.
+
+### Step 4 - Consideration of Bias:
+This data set is very interesting, and I think there are many possible sources of
+bias we could observe. From the viewpoint of data collection, I think it is possible
+that some areas of New York City may have an easier time documenting shooting 
+incidents than others. For example some neighborhoods may be more willing to report
+crimes to the police than other neighborhoods. Another possible source of bias 
+in data collection could be differing definitions of "shooting incidents" between
+different police precincts in the city. For example, perhaps one precinct would 
+classify an accidental gun discharge as a shooting incident, but another precinct
+would not. Both of these ideas of bias in data collection are hypothetical, as I
+am unsure if they occur for this particular dataset.\\
+
+For my own approach to this data, I have assumed that the latitude and longitude 
+are equally good for geolocating an incident, as the x and y coordinates in the 
+raw data. If these systems do differ, then any plots I make would be skewed compared
+someone using the x and y coordinates. Another source of bias I could be introducing
+was casting some victim age codes as NA. I believe that some of these codes were typos,
+or perhaps errors in the data, and cast them as NA. If instead these codes had meaning
+then I could have biased results. I think my biggest source of bias in analysis of
+this data, is my own lack of knowledge about the New York region, and NYPD data
+in particular.
+
+\newpage
+
+### Appendix -  Session Information
+To wrap up this document, I include session info for the R code, i.e. calling out
+the current versions of packages for reproducibility.
+\small
+```{r ending}
+sessionInfo()
+```
+\normalsize
